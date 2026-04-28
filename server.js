@@ -1,3 +1,4 @@
+```js
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -26,6 +27,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
+
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
@@ -36,6 +38,11 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Root Route Fix
+app.get("/", (req, res) => {
+  res.send("Backend is running successfully 🚀");
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -53,76 +60,107 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('MySQL connected via Sequelize');
 
-    // Sync models
-    await sequelize.sync({ alter: true }); 
-    
-    // Seed Database if empty
+    await sequelize.sync({ alter: true });
+
     const userCount = await User.count();
+
     if (userCount === 0) {
       console.log('Database empty, seeding init data...');
+
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash('password123', salt);
-      
-      const admin = await User.create({ name: 'Admin User', email: 'admin@admin.com', password: hashedPassword, role: 'admin' });
-      const student = await User.create({ name: 'Student User', email: 'student@student.com', password: hashedPassword, role: 'student' });
-      const group = await Group.create({ name: 'Alpha Group' });
-      
-      // Assign student to group
+
+      const admin = await User.create({
+        name: 'Admin User',
+        email: 'admin@admin.com',
+        password: hashedPassword,
+        role: 'admin'
+      });
+
+      const student = await User.create({
+        name: 'Student User',
+        email: 'student@student.com',
+        password: hashedPassword,
+        role: 'student'
+      });
+
+      const group = await Group.create({
+        name: 'Alpha Group'
+      });
+
       student.groupId = group.id;
       await student.save();
-      
-      const project = await Project.create({ 
-        title: 'Full Stack Web App', 
-        description: 'Build a project management platform with React and Node.js.', 
-        assignedGroup: group.id, 
-        deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
+
+      const project = await Project.create({
+        title: 'Full Stack Web App',
+        description: 'Build a project management platform with React and Node.js.',
+        assignedGroup: group.id,
+        deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
       });
-      
-      await Task.create({ title: 'Design Landing Page', description: 'Create UI for the landing page', assignedTo: student.id, projectId: project.id, status: 'completed' });
-      await Task.create({ title: 'Setup Backend API', description: 'Create REST endpoints', assignedTo: student.id, projectId: project.id, status: 'pending' });
-      
-      console.log('Database seeded with admin@admin.com and student@student.com (password: password123)');
+
+      await Task.create({
+        title: 'Design Landing Page',
+        description: 'Create UI for the landing page',
+        assignedTo: student.id,
+        projectId: project.id,
+        status: 'completed'
+      });
+
+      await Task.create({
+        title: 'Setup Backend API',
+        description: 'Create REST endpoints',
+        assignedTo: student.id,
+        projectId: project.id,
+        status: 'pending'
+      });
+
+      console.log('Database seeded successfully');
     }
-    
+
   } catch (err) {
     console.error('MySQL connection/sync error:', err);
   }
 };
+
 connectDB();
 
-// Socket.io for Real-Time chat
+// Socket.io
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
-  
+
   socket.on('register_user', (userId) => {
     socket.join(userId);
-    console.log(`Socket ${socket.id} registered for private messages as ${userId}`);
   });
 
   socket.on('join_group', (groupId) => {
     socket.join(groupId);
-    console.log(`Socket ${socket.id} joined group ${groupId}`);
   });
 
   socket.on('send_message', async (data) => {
     const { sender, groupId, receiverId, content } = data;
+
     try {
       const isGlobal = groupId === 'global';
-      const message = await Message.create({ 
-        sender, 
-        groupId: isGlobal ? null : (groupId || null), 
-        receiverId: receiverId || null, 
-        content 
+
+      const message = await Message.create({
+        sender,
+        groupId: isGlobal ? null : groupId || null,
+        receiverId: receiverId || null,
+        content
       });
-      const populatedMsg = await Message.findByPk(message.id, { include: ['sender_obj'] });
-      
+
+      const populatedMsg = await Message.findByPk(message.id, {
+        include: ['sender_obj']
+      });
+
       const json = populatedMsg.toJSON();
-      if(json.sender_obj) {
+
+      if (json.sender_obj) {
         json.sender = json.sender_obj;
         json.sender._id = json.sender.id;
         delete json.sender_obj;
       }
-      
+
       if (isGlobal) {
         io.to('global').emit('receive_message', json);
       } else if (groupId) {
@@ -130,6 +168,7 @@ io.on('connection', (socket) => {
       } else if (receiverId) {
         io.to(receiverId).to(sender).emit('receive_message', json);
       }
+
     } catch (error) {
       console.error('Error saving message:', error);
     }
@@ -141,6 +180,8 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+```
